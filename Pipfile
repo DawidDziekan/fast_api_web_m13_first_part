@@ -1,0 +1,27 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+fastapi = "==0.90.1"
+uvicorn = {extras = ["standard"], version = "*"}
+sqlalchemy = "*"
+typing = "*"
+psycopg2-binary = "*"
+alembic = "*"
+pydantic-settings = "*"
+passlib = "*"
+python-jose = "*"
+bcrypt = "*"
+fastapi-mail = "*"
+cloudinary = "*"
+fastapi-limiter = "*"
+aioredis = "*"
+libgravatar = "*"
+pydantic = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.12"
