@@ -1,5 +1,4 @@
 from typing import List
-
 from fastapi import APIRouter, HTTPException, Depends, status, Security, BackgroundTasks, Request, File, UploadFile
 from fastapi.security import OAuth2PasswordRequestForm, HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
@@ -16,6 +15,17 @@ security = HTTPBearer()
 
 @router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def signup(body: UserModel, background_tasks: BackgroundTasks, request: Request, db: Session = Depends(get_db)):
+    """
+    Register a new user.
+
+    - **body**: JSON body containing user information (username, email, password).
+    - **background_tasks**: BackgroundTasks instance to handle sending email confirmation.
+    - **request**: Request object to retrieve base URL for email confirmation link.
+    - **db**: SQLAlchemy database session dependency.
+
+    Returns:
+    - JSON response with newly created user details and a success message.
+    """
     exist_user = await repository_users.get_user_by_email(body.email, db)
     if exist_user:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Account already exists")
@@ -27,6 +37,15 @@ async def signup(body: UserModel, background_tasks: BackgroundTasks, request: Re
 
 @router.post("/login", response_model=TokenModel)
 async def login(body: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    """
+    User login endpoint.
+
+    - **body**: OAuth2PasswordRequestForm object containing username (email) and password.
+    - **db**: SQLAlchemy database session dependency.
+
+    Returns:
+    - JSON response with access token, refresh token, and token type (bearer).
+    """
     user = await repository_users.get_user_by_email(body.username, db)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email")
@@ -43,6 +62,15 @@ async def login(body: OAuth2PasswordRequestForm = Depends(), db: Session = Depen
 
 @router.get('/refresh_token', response_model=TokenModel)
 async def refresh_token(credentials: HTTPAuthorizationCredentials = Security(security), db: Session = Depends(get_db)):
+    """
+    Refresh access token endpoint.
+
+    - **credentials**: HTTPAuthorizationCredentials object containing bearer token.
+    - **db**: SQLAlchemy database session dependency.
+
+    Returns:
+    - JSON response with new access token, refresh token, and token type (bearer).
+    """
     token = credentials.credentials
     email = await auth_service.decode_refresh_token(token)
     user = await repository_users.get_user_by_email(email, db)
@@ -58,6 +86,15 @@ async def refresh_token(credentials: HTTPAuthorizationCredentials = Security(sec
 
 @router.get('/confirmed_email/{token}')
 async def confirmed_email(token: str, db: Session = Depends(get_db)):
+    """
+    Confirm user email endpoint.
+
+    - **token**: Email confirmation token.
+    - **db**: SQLAlchemy database session dependency.
+
+    Returns:
+    - JSON response with confirmation message or error message.
+    """
     email = await auth_service.get_email_from_token(token)
     user = await repository_users.get_user_by_email(email, db)
     if user is None:
@@ -69,8 +106,18 @@ async def confirmed_email(token: str, db: Session = Depends(get_db)):
 
 
 @router.post('/request_email')
-async def request_email(body: RequestEmail, background_tasks: BackgroundTasks, request: Request,
-                        db: Session = Depends(get_db)):
+async def request_email(body: RequestEmail, background_tasks: BackgroundTasks, request: Request, db: Session = Depends(get_db)):
+    """
+    Request email confirmation endpoint.
+
+    - **body**: JSON body containing user email.
+    - **background_tasks**: BackgroundTasks instance to handle sending email confirmation.
+    - **request**: Request object to retrieve base URL for email confirmation link.
+    - **db**: SQLAlchemy database session dependency.
+
+    Returns:
+    - JSON response with confirmation message or error message.
+    """
     user = await repository_users.get_user_by_email(body.email, db)
 
     if user.confirmed:
@@ -81,6 +128,14 @@ async def request_email(body: RequestEmail, background_tasks: BackgroundTasks, r
 
 @router.post("/upload-avatar/")
 async def upload_avatar(file: UploadFile = File(...)):
+    """
+    Upload avatar image endpoint.
+
+    - **file**: UploadFile object containing image file.
+
+    Returns:
+    - JSON response with uploaded image URL.
+    """
     result = cloudinary.uploader.upload(file.file)
     url = result.get("url")
     return {"url": url}

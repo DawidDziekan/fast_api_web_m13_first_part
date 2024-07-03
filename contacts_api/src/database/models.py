@@ -1,3 +1,6 @@
+"""
+This module defines the database models for the application using SQLAlchemy ORM.
+"""
 from sqlalchemy import Column, Integer, String, Date, ForeignKey, Boolean, func
 from sqlalchemy.orm import relationship
 from .db import Base
