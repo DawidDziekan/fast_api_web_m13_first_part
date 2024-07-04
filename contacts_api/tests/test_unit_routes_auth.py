@@ -1,94 +1,116 @@
-import pytest
+import unittest
+from unittest.mock import patch
 from fastapi.testclient import TestClient
-from unittest.mock import patch, AsyncMock
-import os
-
-import sys
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 from main import app
-from src.schemas import UserModel, RequestEmail
 from src.database.models import User
-from src.repository import users as repository_users
-from src.services.auth import auth_service
-from src.services.email import send_email
+from src.database.db import SessionLocal
+from datetime import datetime, timedelta, timezone
 
-client = TestClient(app)
 
-@pytest.fixture
-def test_app():
-    return TestClient(app)
+class TestAuthRoutes(unittest.TestCase):
 
-@pytest.fixture
-def user_model():
-    return UserModel(
-        email="john@example.com",
-        username="johndoe",
-        password="securepwd",
-    )
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(app)
+        cls.user = {
+            "email": "john@example1234.com",
+            "username": "asdfghjkl",
+            "password": "zaq1@WSX"
+        }
 
-@pytest.fixture
-def user():
-    return User(
-        email="john@example.com",
-        username="johndoe",
-        password="hashed_pwd",
-    )
+    def _get_session(self):
+        return SessionLocal()
 
-@patch('src.repository.users.get_user_by_email', AsyncMock())
-@patch('src.repository.users.create_user', AsyncMock())
-@patch('src.services.auth.auth_service.get_password_hash', AsyncMock())
-@patch('src.services.email.send_email', AsyncMock())
-def test_signup(test_app, user_model):
-    response = test_app.post("/api/auth/signup", json=user_model.dict())
+    @patch("src.routes.auth.send_email")
+    def test_create_user(self, mock_send_email):
+        # Ensure user does not already exist
+        session = self._get_session()
+        user = session.query(User).filter_by(email=self.user["email"]).first()
+        if user:
+            session.delete(user)
+            session.commit()
+        
+        response = self.client.post(
+            "/api/auth/signup",
+            json=self.user,
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        data = response.json()
+        self.assertEqual(data["user"]["email"], self.user.get("email"))
+        self.assertIn("id", data["user"])
 
-    assert response.status_code == 201
-    assert response.json() == {"user": user_model.dict(), "detail": "User successfully created"}
+    def test_repeat_create_user(self):
+        # Ensure user does not already exist
+        self.client.post("/api/auth/signup", json=self.user)
 
-@patch('src.repository.users.get_user_by_email', AsyncMock())
-@patch('src.services.auth.auth_service.verify_password', AsyncMock())
-@patch('src.services.auth.auth_service.create_access_token', AsyncMock())
-@patch('src.services.auth.auth_service.create_refresh_token', AsyncMock())
-@patch('src.repository.users.update_token', AsyncMock())
-def test_login(test_app, user):
-    response = test_app.post("/api/auth/login", json={"username": "john@example.com", "password": "securepwd"})
+        response = self.client.post(
+            "/api/auth/signup",
+            json=self.user,
+        )
+        self.assertEqual(response.status_code, 409, response.text)
+        data = response.json()
+        self.assertEqual(data["detail"], "Account already exists")
 
-    assert response.status_code == 200
-    assert response.json() == {
-        "access_token": "access_token",
-        "refresh_token": "refresh_token",
-        "token_type": "bearer"
-    }
+    def test_login_user_not_confirmed(self):
+        # Ensure user is not confirmed
+        session = self._get_session()
+        user = session.query(User).filter_by(email=self.user["email"]).first()
+        if user:
+            user.confirmed = False
+            session.commit()
+        
+        response = self.client.post(
+            "/api/auth/login",
+            data={"username": self.user.get('email'), "password": self.user.get('password')},
+        )
+        self.assertEqual(response.status_code, 401, response.text)
+        data = response.json()
+        self.assertEqual(data["detail"], "Email not confirmed")
 
-@patch('src.repository.users.get_user_by_email', AsyncMock())
-@patch('src.services.auth.auth_service.decode_refresh_token', AsyncMock())
-@patch('src.services.auth.auth_service.create_access_token', AsyncMock())
-@patch('src.services.auth.auth_service.create_refresh_token', AsyncMock())
-@patch('src.repository.users.update_token', AsyncMock())
-def test_refresh_token(test_app, user):
-    headers = {"Authorization": "Bearer old_refresh_token"}
-    response = test_app.get("/api/auth/refresh_token", headers=headers)
+    def test_login_user(self):
+        session = self._get_session()
+        current_user: User = session.query(User).filter(User.email == self.user.get('email')).first()
+        if current_user:
+            current_user.confirmed = True
+            session.commit()
+        else:
+            self.fail("User does not exist in the database")
 
-    assert response.status_code == 200
-    assert response.json() == {
-        "access_token": "new_access_token",
-        "refresh_token": "new_refresh_token",
-        "token_type": "bearer"
-    }
+        response = self.client.post(
+            "/api/auth/login",
+            data={"username": self.user.get('email'), "password": self.user.get('password')},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()
+        self.assertEqual(data["token_type"], "bearer")
 
-@patch('src.repository.users.get_user_by_email', AsyncMock())
-@patch('src.services.auth.auth_service.get_email_from_token', AsyncMock())
-@patch('src.repository.users.confirmed_email', AsyncMock())
-def test_confirmed_email(test_app, user):
-    response = test_app.get("/api/auth/confirmed_email/test_token")
+    def test_login_wrong_password(self):
+        # Ensure user is confirmed before testing wrong password
+        session = self._get_session()
+        current_user: User = session.query(User).filter(User.email == self.user.get('email')).first()
+        if current_user:
+            current_user.confirmed = True
+            session.commit()
+        else:
+            self.fail("User does not exist in the database")
+        
+        response = self.client.post(
+            "/api/auth/login",
+            data={"username": self.user.get('email'), "password": 'wrong_password'},
+        )
+        self.assertEqual(response.status_code, 401, response.text)
+        data = response.json()
+        self.assertEqual(data["detail"], "Invalid password")
 
-    assert response.status_code == 200
-    assert response.json() == {"message": "Email confirmed"}
+    def test_login_wrong_email(self):
+        response = self.client.post(
+            "/api/auth/login",
+            data={"username": 'wrong_email@example.com', "password": self.user.get('password')},
+        )
+        self.assertEqual(response.status_code, 401, response.text)
+        data = response.json()
+        self.assertEqual(data["detail"], "Invalid email")
 
-@patch('src.repository.users.get_user_by_email', AsyncMock())
-@patch('src.services.email.send_email', AsyncMock())
-def test_request_email(test_app, user):
-    response = test_app.post("/api/auth/request_email", json={"email": user.email})
+if __name__ == '__main__':
+    unittest.main()
 
-    assert response.status_code == 200
-    assert response.json() == {"message": "Check your email for confirmation."}

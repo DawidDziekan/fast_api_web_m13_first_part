@@ -20,8 +20,8 @@ class TestUsersRepository(unittest.TestCase):
         self.user_data = UserModel(
             email="john@example.com",
             username="johndoe",
-            password="securepwd",  # Adjusted to meet the max length constraint
-            avatar=None  # You can mock the UploadFile object for testing avatar uploads
+            password="securepwd",  
+            avatar=None
         )
 
     @patch('src.repository.users.cloudinary.uploader.upload', new_callable=AsyncMock)
