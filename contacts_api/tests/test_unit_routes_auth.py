@@ -4,7 +4,6 @@ from fastapi.testclient import TestClient
 from main import app
 from src.database.models import User
 from src.database.db import SessionLocal
-from datetime import datetime, timedelta, timezone
 
 
 class TestAuthRoutes(unittest.TestCase):
@@ -23,7 +22,6 @@ class TestAuthRoutes(unittest.TestCase):
 
     @patch("src.routes.auth.send_email")
     def test_create_user(self, mock_send_email):
-        # Ensure user does not already exist
         session = self._get_session()
         user = session.query(User).filter_by(email=self.user["email"]).first()
         if user:
@@ -40,7 +38,6 @@ class TestAuthRoutes(unittest.TestCase):
         self.assertIn("id", data["user"])
 
     def test_repeat_create_user(self):
-        # Ensure user does not already exist
         self.client.post("/api/auth/signup", json=self.user)
 
         response = self.client.post(
@@ -52,7 +49,6 @@ class TestAuthRoutes(unittest.TestCase):
         self.assertEqual(data["detail"], "Account already exists")
 
     def test_login_user_not_confirmed(self):
-        # Ensure user is not confirmed
         session = self._get_session()
         user = session.query(User).filter_by(email=self.user["email"]).first()
         if user:
@@ -85,7 +81,6 @@ class TestAuthRoutes(unittest.TestCase):
         self.assertEqual(data["token_type"], "bearer")
 
     def test_login_wrong_password(self):
-        # Ensure user is confirmed before testing wrong password
         session = self._get_session()
         current_user: User = session.query(User).filter(User.email == self.user.get('email')).first()
         if current_user:
